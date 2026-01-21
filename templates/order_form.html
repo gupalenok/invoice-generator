@@ -1,0 +1,146 @@
+{% extends "base.html" %}
+
+{% block title %}Счёт-оферта {{ order.invoice_number }}{% endblock %}
+
+{% block content %}
+<div class="form-container">
+    <h1>Счёт-оферта {{ order.invoice_number }}</h1>
+    <p class="subtitle">от {{ order.created_at[:10] }}</p>
+    
+    <div class="order-info">
+        <h3>Информация о заказе</h3>
+        <table class="products-table">
+            <thead>
+                <tr>
+                    <th>№</th>
+                    <th>Наименование</th>
+                    <th>Срок</th>
+                    <th>Кол-во</th>
+                    <th>Цена</th>
+                    <th>Сумма</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for product in order.products %}
+                <tr>
+                    <td>{{ loop.index }}</td>
+                    <td>{{ product.name }}</td>
+                    <td>{{ product.period or '—' }}</td>
+                    <td>{{ product.quantity }}</td>
+                    <td>{{ "{:,.2f}".format(product.price).replace(",", " ") }} ₽</td>
+                    <td>{{ "{:,.2f}".format(product.amount).replace(",", " ") }} ₽</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+            <tfoot>
+                <tr>
+                    <td colspan="5" style="text-align: right;"><strong>ИТОГО:</strong></td>
+                    <td><strong>{{ "{:,.2f}".format(order.total_amount).replace(",", " ") }} ₽</strong></td>
+                </tr>
+            </tfoot>
+        </table>
+    </div>
+    
+    <div class="company-form">
+        <h3>Реквизиты вашей организации</h3>
+        
+        <form action="/order/{{ order.id }}/save" method="POST">
+            <div class="form-group">
+                <label for="company_inn">ИНН *</label>
+                <div class="inn-input">
+                    <input 
+                        type="text" 
+                        id="company_inn" 
+                        name="company_inn" 
+                        value="{{ order.company_inn or '' }}"
+                        placeholder="Введите ИНН организации"
+                        required
+                        maxlength="12"
+                    >
+                    <button type="button" id="find-btn" onclick="findCompany()">Найти</button>
+                </div>
+            </div>
+            
+            <div class="form-group">
+                <label for="company_name">Название организации *</label>
+                <input 
+                    type="text" 
+                    id="company_name" 
+                    name="company_name" 
+                    value="{{ order.company_name or '' }}"
+                    placeholder="Заполнится автоматически"
+                    required
+                >
+            </div>
+            
+            <div class="form-group">
+                <label for="company_kpp">КПП</label>
+                <input 
+                    type="text" 
+                    id="company_kpp" 
+                    name="company_kpp" 
+                    value="{{ order.company_kpp or '' }}"
+                    placeholder="Для юр. лиц"
+                    maxlength="9"
+                >
+            </div>
+            
+            <div class="form-group">
+                <label for="company_address">Юридический адрес *</label>
+                <textarea 
+                    id="company_address" 
+                    name="company_address" 
+                    placeholder="Заполнится автоматически"
+                    required
+                    rows="2"
+                >{{ order.company_address or '' }}</textarea>
+            </div>
+            
+            <button type="submit" class="submit-btn">Сформировать счёт</button>
+        </form>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+async function findCompany() {
+    const inn = document.getElementById('company_inn').value.trim();
+    
+    if (!inn) {
+        alert('Введите ИНН');
+        return;
+    }
+    
+    const btn = document.getElementById('find-btn');
+    btn.disabled = true;
+    btn.textContent = 'Поиск...';
+    
+    try {
+        const response = await fetch(`/api/company?inn=${inn}`);
+        const data = await response.json();
+        
+        if (data.error) {
+            alert('Компания не найдена. Заполните данные вручную.');
+        } else {
+            document.getElementById('company_name').value = data.name || '';
+            document.getElementById('company_kpp').value = data.kpp || '';
+            document.getElementById('company_address').value = data.address || '';
+        }
+    } catch (e) {
+        alert('Ошибка при поиске. Заполните данные вручную.');
+    } finally {
+        btn.disabled = false;
+        btn.textContent = 'Найти';
+    }
+}
+
+// Поиск при нажатии Enter в поле ИНН
+document.getElementById('company_inn').addEventListener('keypress', function(e) {
+    if (e.key === 'Enter') {
+        e.preventDefault();
+        findCompany();
+    }
+});
+</script>
+{% endblock %}
