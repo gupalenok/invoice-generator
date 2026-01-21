@@ -244,13 +244,18 @@ async def download_pdf(order_id: int):
 @app.get("/admin", response_class=HTMLResponse)
 async def admin_panel(request: Request):
     """Админ-панель со списком заказов"""
-    
-    orders = get_all_orders()
-    
-    return templates.TemplateResponse("admin.html", {
-        "request": request,
-        "orders": orders,
-    })
+    try:
+        orders = get_all_orders()
+        return templates.TemplateResponse("admin.html", {
+            "request": request,
+            "orders": orders,
+        })
+    except Exception as e:
+        import traceback
+        error_text = traceback.format_exc()
+        print(f"ERROR in /admin: {error_text}")
+        return HTMLResponse(content=f"<pre>Error: {error_text}</pre>", status_code=500)
+
 
 
 # ============== ГЛАВНАЯ ==============
