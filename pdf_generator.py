@@ -1,7 +1,12 @@
-from fpdf import FPDF
+from reportlab.lib.pagesizes import A4
+from reportlab.lib.units import mm
+from reportlab.pdfgen import canvas
+from reportlab.pdfbase import pdfmetrics
+from reportlab.pdfbase.ttfonts import TTFont
+from reportlab.lib import colors
 from datetime import datetime, timedelta
 from num2words import num2words
-import os
+from io import BytesIO
 
 from config import COMPANY, PAYMENT_DAYS
 
@@ -40,31 +45,12 @@ def number_to_words_ru(number: float) -> str:
     return f"{rubles_word.capitalize()} {rub_form} {kopeks:02d} {kop_form}"
 
 
-class InvoicePDF(FPDF):
-    def __init__(self):
-        super().__init__()
-        # Добавляем поддержку русского языка
-        self.add_font('DejaVu', '', 'fonts/DejaVuSans.ttf', uni=True)
-        self.add_font('DejaVu', 'B', 'fonts/DejaVuSans-Bold.ttf', uni=True)
-        
-    def header(self):
-        pass
-        
-    def footer(self):
-        self.set_y(-15)
-        self.set_font('DejaVu', '', 8)
-        self.cell(0, 10, f'Страница {self.page_no()}', 0, 0, 'C')
-
-
 def generate_invoice_pdf(order: dict) -> bytes:
     """Генерация PDF счёта-оферты"""
     
-    # Создаём PDF
-    pdf = FPDF()
-    pdf.add_page()
-    
-    # Добавляем встроенный шрифт с поддержкой кириллицы
-    pdf.add_font('DejaVu', '', 'https://github.com/ArtifexSoftware/urern-fonts/raw/main/DejaVuSans.ttf', uni=True)
+    buffer = BytesIO()
+    c = canvas.Canvas(buffer, pagesize=A4)
+    width, height = A4
     
     # Подготавливаем данные
     created_at = order["created_at"]
@@ -74,122 +60,140 @@ def generate_invoice_pdf(order: dict) -> bytes:
         invoice_date = created_at
     
     payment_date = invoice_date + timedelta(days=PAYMENT_DAYS)
-    
     total_amount = order["total_amount"]
     total_words = number_to_words_ru(total_amount)
     
+    # Начальная позиция
+    y = height - 30*mm
+    left_margin = 20*mm
+    
     # === ШАПКА С РЕКВИЗИТАМИ БАНКА ===
-    pdf.set_font('Helvetica', 'B', 10)
-    pdf.cell(0, 6, 'Получатель:', 0, 1)
+    c.setFont("Helvetica-Bold", 10)
+    c.drawString(left_margin, y, "Poluchatel:")
+    y -= 5*mm
     
-    pdf.set_font('Helvetica', '', 9)
-    pdf.cell(0, 5, f'ИНН {COMPANY["inn"]} КПП {COMPANY["kpp"]}', 0, 1)
-    pdf.cell(0, 5, f'{COMPANY["name"]}', 0, 1)
-    pdf.cell(0, 5, f'Р/Сч. № {COMPANY["account"]}', 0, 1)
+    c.setFont("Helvetica", 9)
+    c.drawString(left_margin, y, f"INN {COMPANY['inn']} KPP {COMPANY['kpp']}")
+    y -= 4*mm
+    c.drawString(left_margin, y, f"{COMPANY['name']}")
+    y -= 4*mm
+    c.drawString(left_margin, y, f"R/Sch. No {COMPANY['account']}")
+    y -= 6*mm
     
-    pdf.ln(3)
-    pdf.set_font('Helvetica', 'B', 10)
-    pdf.cell(0, 6, 'Банк получателя:', 0, 1)
+    c.setFont("Helvetica-Bold", 10)
+    c.drawString(left_margin, y, "Bank poluchatelya:")
+    y -= 5*mm
     
-    pdf.set_font('Helvetica', '', 9)
-    pdf.cell(0, 5, f'{COMPANY["bank_name"]}', 0, 1)
-    pdf.cell(0, 5, f'БИК {COMPANY["bik"]} К/Сч. № {COMPANY["corr_account"]}', 0, 1)
+    c.setFont("Helvetica", 9)
+    c.drawString(left_margin, y, f"{COMPANY['bank_name']}")
+    y -= 4*mm
+    c.drawString(left_margin, y, f"BIK {COMPANY['bik']} K/Sch. No {COMPANY['corr_account']}")
+    y -= 10*mm
     
     # === ЗАГОЛОВОК СЧЁТА ===
-    pdf.ln(10)
-    pdf.set_font('Helvetica', 'B', 14)
-    pdf.cell(0, 10, f'Счёт-оферта {order["invoice_number"]} от {invoice_date.strftime("%d.%m.%Y")}', 0, 1, 'C')
+    c.setFont("Helvetica-Bold", 14)
+    title = f"Schet-oferta {order['invoice_number']} ot {invoice_date.strftime('%d.%m.%Y')}"
+    c.drawCentredString(width/2, y, title)
+    y -= 10*mm
     
     # === СТОРОНЫ ===
-    pdf.ln(5)
-    pdf.set_font('Helvetica', '', 9)
+    c.setFont("Helvetica-Bold", 9)
+    c.drawString(left_margin, y, "Agent:")
+    c.setFont("Helvetica", 9)
+    c.drawString(left_margin + 15*mm, y, f"{COMPANY['name']}, INN: {COMPANY['inn']}, KPP: {COMPANY['kpp']}")
+    y -= 4*mm
+    c.drawString(left_margin, y, f"Adres: {COMPANY['address']}")
+    y -= 4*mm
+    c.drawString(left_margin, y, f"Tel.: {COMPANY['phone']}, Email: {COMPANY['email']}")
+    y -= 6*mm
     
-    # Агент
-    pdf.set_font('Helvetica', 'B', 9)
-    pdf.cell(15, 5, 'Агент:', 0, 0)
-    pdf.set_font('Helvetica', '', 9)
-    agent_text = f'{COMPANY["name_full"]}, ИНН: {COMPANY["inn"]}, КПП: {COMPANY["kpp"]}'
-    pdf.multi_cell(0, 5, agent_text)
-    
-    pdf.cell(0, 5, f'Адрес: {COMPANY["address"]}', 0, 1)
-    pdf.cell(0, 5, f'Тел.: {COMPANY["phone"]}, Email: {COMPANY["email"]}', 0, 1)
-    
-    pdf.ln(3)
-    
-    # Клиент
-    pdf.set_font('Helvetica', 'B', 9)
-    pdf.cell(15, 5, 'Клиент:', 0, 0)
-    pdf.set_font('Helvetica', '', 9)
-    
-    kpp_text = f', КПП: {order["company_kpp"]}' if order.get("company_kpp") else ''
-    client_text = f'{order["company_name"]}, ИНН: {order["company_inn"]}{kpp_text}'
-    pdf.multi_cell(0, 5, client_text)
+    c.setFont("Helvetica-Bold", 9)
+    c.drawString(left_margin, y, "Klient:")
+    c.setFont("Helvetica", 9)
+    kpp_text = f", KPP: {order['company_kpp']}" if order.get("company_kpp") else ""
+    c.drawString(left_margin + 15*mm, y, f"{order['company_name']}, INN: {order['company_inn']}{kpp_text}")
+    y -= 4*mm
     
     if order.get("company_address"):
-        pdf.cell(0, 5, f'Адрес: {order["company_address"]}', 0, 1)
+        c.drawString(left_margin, y, f"Adres: {order['company_address'][:80]}")
+        y -= 4*mm
     
-    pdf.ln(2)
-    pdf.set_font('Helvetica', 'B', 9)
-    pdf.cell(0, 5, f'Срок оплаты: {payment_date.strftime("%d.%m.%Y")}', 0, 1)
+    y -= 2*mm
+    c.setFont("Helvetica-Bold", 9)
+    c.drawString(left_margin, y, f"Srok oplaty: {payment_date.strftime('%d.%m.%Y')}")
+    y -= 8*mm
     
     # === ТАБЛИЦА ТОВАРОВ ===
-    pdf.ln(5)
+    c.setFont("Helvetica-Bold", 9)
     
-    # Заголовок таблицы
-    pdf.set_font('Helvetica', 'B', 9)
-    pdf.set_fill_color(240, 240, 240)
+    # Заголовки таблицы
+    col_x = [left_margin, left_margin + 10*mm, left_margin + 100*mm, left_margin + 140*mm]
     
-    col_widths = [10, 90, 40, 50]
-    headers = ['№', 'Наименование', 'Период', 'Стоимость, руб.']
+    c.setFillColor(colors.lightgrey)
+    c.rect(left_margin, y - 2*mm, 170*mm, 7*mm, fill=True, stroke=True)
+    c.setFillColor(colors.black)
     
-    for i, header in enumerate(headers):
-        pdf.cell(col_widths[i], 8, header, 1, 0, 'C', True)
-    pdf.ln()
+    c.drawString(col_x[0] + 2*mm, y, "No")
+    c.drawString(col_x[1] + 2*mm, y, "Naimenovanie")
+    c.drawString(col_x[2] + 2*mm, y, "Period")
+    c.drawString(col_x[3] + 2*mm, y, "Summa, rub.")
+    y -= 7*mm
     
     # Строки товаров
-    pdf.set_font('Helvetica', '', 9)
-    
+    c.setFont("Helvetica", 9)
     for idx, product in enumerate(order["products"], 1):
-        pdf.cell(col_widths[0], 7, str(idx), 1, 0, 'C')
-        pdf.cell(col_widths[1], 7, product["name"][:50], 1, 0, 'L')
-        pdf.cell(col_widths[2], 7, product.get("period", "-") or "-", 1, 0, 'C')
-        pdf.cell(col_widths[3], 7, f'{product["amount"]:,.2f}'.replace(",", " "), 1, 0, 'R')
-        pdf.ln()
+        c.rect(left_margin, y - 2*mm, 170*mm, 6*mm, fill=False, stroke=True)
+        c.drawString(col_x[0] + 2*mm, y, str(idx))
+        
+        name = product["name"][:45] if len(product["name"]) > 45 else product["name"]
+        c.drawString(col_x[1] + 2*mm, y, name)
+        c.drawString(col_x[2] + 2*mm, y, product.get("period", "-") or "-")
+        c.drawString(col_x[3] + 2*mm, y, f"{product['amount']:,.2f}".replace(",", " "))
+        y -= 6*mm
     
     # НДС
-    pdf.set_font('Helvetica', '', 9)
-    pdf.cell(col_widths[0] + col_widths[1], 7, '', 0, 0)
-    pdf.cell(col_widths[2], 7, 'НДС:', 0, 0, 'R')
-    pdf.cell(col_widths[3], 7, 'Без НДС', 1, 1, 'R')
+    y -= 2*mm
+    c.drawString(col_x[2] + 2*mm, y, "NDS:")
+    c.drawString(col_x[3] + 2*mm, y, "Bez NDS")
+    y -= 5*mm
     
     # ИТОГО
-    pdf.set_font('Helvetica', 'B', 10)
-    pdf.cell(col_widths[0] + col_widths[1], 8, '', 0, 0)
-    pdf.cell(col_widths[2], 8, 'ИТОГО:', 0, 0, 'R')
-    pdf.cell(col_widths[3], 8, f'{total_amount:,.2f}'.replace(",", " "), 1, 1, 'R')
+    c.setFont("Helvetica-Bold", 10)
+    c.drawString(col_x[2] + 2*mm, y, "ITOGO:")
+    c.drawString(col_x[3] + 2*mm, y, f"{total_amount:,.2f}".replace(",", " "))
+    y -= 8*mm
     
     # === СУММА ПРОПИСЬЮ ===
-    pdf.ln(5)
-    pdf.set_font('Helvetica', 'B', 9)
-    pdf.cell(0, 6, f'Всего к оплате: {total_words}', 0, 1)
+    c.setFont("Helvetica-Bold", 9)
+    c.drawString(left_margin, y, f"Vsego k oplate: {total_words}")
+    y -= 10*mm
     
     # === УСЛОВИЯ ОФЕРТЫ ===
-    pdf.ln(5)
-    pdf.set_font('Helvetica', '', 8)
+    c.setFont("Helvetica", 7)
+    terms = [
+        "Nastoyaschiy Schet-oferta yavlyaetsya pismennym predlozheniem (ofertoy) Agenta zaklyuchit Dogovor",
+        "v sootvetstvii so st. 432-444 GK RF. Dogovor zaklyuchaetsya putem prinyatiya (aktsepta) oferty Klientom.",
+        "",
+        "1. Predmet Dogovora.",
+        "1.1. Po nastoyaschemu dogovoru Agent obyazuetsya okazat uslugi, perechislennye v Schete, a Klient obyazuetsya oplatit eti uslugi.",
+        "",
+        "2. Poryadok raschetov.",
+        "2.1. Klient obyazuetsya oplatit Schet-ofertu v techenie 3-h rabochih dney s momenta polucheniya.",
+        "2.2. Obyazannost Klienta po oplate schitaetsya ispolnennoy s momenta postupleniya denezhnyh sredstv na raschetnyy schet Agenta.",
+        "",
+        "3. Srok deystviya Dogovora.",
+        "3.1. Dogovor vstupaet v deystvie s momenta aktsepta (oplaty Scheta-oferty) do momenta vypolneniya uslug.",
+    ]
     
-    terms = """Настоящий Счёт-оферта является письменным предложением (офертой) Агента заключить Договор в соответствии со ст. 432-444 ГК РФ. Договор заключается путем принятия (акцепта) оферты Клиентом (п. 3 ст. 438 ГК РФ).
-
-1. Предмет Договора.
-1.1. По настоящему договору Агент обязуется оказать услуги, перечисленные в Счёте, а Клиент обязуется оплатить эти услуги.
-
-2. Порядок расчетов.
-2.1. Клиент обязуется оплатить Счёт-оферту в течение 3-х рабочих дней с момента получения.
-2.2. Обязанность Клиента по оплате считается исполненной с момента поступления денежных средств на расчетный счет Агента.
-
-3. Срок действия Договора.
-3.1. Договор вступает в действие с момента акцепта (оплаты Счета-оферты) до момента выполнения услуг."""
+    for line in terms:
+        if y < 20*mm:
+            c.showPage()
+            y = height - 20*mm
+            c.setFont("Helvetica", 7)
+        c.drawString(left_margin, y, line)
+        y -= 3.5*mm
     
-    pdf.multi_cell(0, 4, terms)
+    c.save()
     
-    # Возвращаем PDF как bytes
-    return pdf.output()
+    buffer.seek(0)
+    return buffer.getvalue()
