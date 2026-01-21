@@ -2,6 +2,7 @@ from fastapi import FastAPI, Request, Form, HTTPException
 from fastapi.responses import HTMLResponse, Response, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
+from fastapi.middleware.cors import CORSMiddleware
 from datetime import datetime
 import json
 
@@ -14,6 +15,14 @@ from pdf_generator import generate_invoice_pdf
 from config import COMPANY, INVOICE_PREFIX, INVOICE_START_NUMBER
 
 app = FastAPI(title="InvoiceGen")
+# Разрешаем запросы от Тильды
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 # Статические файлы и шаблоны
 app.mount("/static", StaticFiles(directory="static"), name="static")
@@ -31,30 +40,47 @@ async def startup():
 async def tilda_webhook(request: Request):
     """Приём вебхука от Тильды"""
     try:
-        # Получаем данные
+        # Получаем данные в любом формате
         content_type = request.headers.get("content-type", "")
         
-        if "application/json" in content_type:
-            data = await request.json()
-        else:
-            form_data = await request.form()
-            data = dict(form_data)
-        
-        # ЛОГИРУЕМ ВСЁ ЧТО ПРИШЛО
         print("=" * 50)
         print("WEBHOOK RECEIVED!")
         print(f"Content-Type: {content_type}")
-        print(f"Data: {data}")
+        
+        # Пробуем разные форматы
+        data = {}
+        
+        try:
+            # Сначала пробуем как form-data (так Тильда обычно шлёт)
+            form_data = await request.form()
+            data = dict(form_data)
+            print(f"Form data: {data}")
+        except:
+            pass
+        
+        if not data:
+            try:
+                # Пробуем как JSON
+                data = await request.json()
+                print(f"JSON data: {data}")
+            except:
+                pass
+        
+        if not data:
+            # Читаем сырые данные
+            body = await request.body()
+            print(f"Raw body: {body}")
+            return {"status": "error", "message": "No data received"}
+        
+        print(f"Final data: {data}")
         print("=" * 50)
         
         # Парсим заказ
         order_data = parse_tilda_order(data)
-        
         print(f"Parsed order: {order_data}")
         
         # Сохраняем
         order_id = create_order(order_data)
-        
         print(f"Created order ID: {order_id}")
         
         return {"status": "ok", "order_id": order_id}
@@ -63,7 +89,9 @@ async def tilda_webhook(request: Request):
         import traceback
         error_text = traceback.format_exc()
         print(f"WEBHOOK ERROR: {error_text}")
-        return {"status": "error", "message": str(e)}
+        # Возвращаем ok чтобы Тильда не повторяла запрос
+        return {"status": "ok"}
+
 
 
 
