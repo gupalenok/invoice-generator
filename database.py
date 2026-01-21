@@ -163,3 +163,21 @@ def update_order(order_id: int, data: dict) -> bool:
     conn.close()
     
     return True
+
+def update_order_company(order_id: int, company_name: str, company_inn: str, 
+                          company_kpp: str, company_address: str) -> bool:
+    """Обновление данных компании в заказе"""
+    return update_order(order_id, {
+        "company_name": company_name,
+        "company_inn": company_inn,
+        "company_kpp": company_kpp,
+        "company_address": company_address
+    })
+
+
+def mark_pdf_generated(order_id: int) -> bool:
+    """Отметка что PDF сгенерирован"""
+    return update_order(order_id, {
+        "status": "pdf_generated"
+    })
+
