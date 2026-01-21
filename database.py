@@ -1,89 +1,67 @@
-import sqlite3
+import os
+import psycopg2
+from psycopg2.extras import RealDictCursor
 from datetime import datetime
 from typing import Optional
 import json
 
-DATABASE_NAME = "invoices.db"
+DATABASE_URL = os.getenv("DATABASE_URL")
 
 
 def get_connection():
-    conn = sqlite3.connect(DATABASE_NAME)
-    conn.row_factory = sqlite3.Row
-    return conn
+    """Подключение к PostgreSQL"""
+    return psycopg2.connect(DATABASE_URL, cursor_factory=RealDictCursor)
 
 
 def init_db():
+    """Создание таблиц"""
     conn = get_connection()
     cursor = conn.cursor()
     
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS orders (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            id SERIAL PRIMARY KEY,
             invoice_number TEXT UNIQUE,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             status TEXT DEFAULT 'new',
             
-            -- Товары (JSON массив)
             products TEXT,
             total_amount REAL,
             
-            -- Данные заказчика из Тильды
             customer_name TEXT,
             customer_email TEXT,
             customer_phone TEXT,
             
-            -- Данные организации (дозаполняются)
             company_name TEXT,
             company_inn TEXT,
             company_kpp TEXT,
-            company_address TEXT,
-            
-            -- PDF
-            pdf_generated INTEGER DEFAULT 0,
-            
-            -- CRM
-            sent_to_crm INTEGER DEFAULT 0
+            company_address TEXT
         )
     """)
-    
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS settings (
-            key TEXT PRIMARY KEY,
-            value TEXT
-        )
-    """)
-    
-    # Инициализация счётчика
-    cursor.execute(
-        "INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)",
-        ("last_invoice_number", "0")
-    )
     
     conn.commit()
     conn.close()
+    print("Database initialized!")
 
 
-def get_next_invoice_number(prefix: str, start_number: int) -> str:
+def get_next_invoice_number(prefix: str = "СЧ", start_number: int = 1) -> str:
+    """Генерация номера счёта"""
     conn = get_connection()
     cursor = conn.cursor()
     
-    cursor.execute("SELECT value FROM settings WHERE key = 'last_invoice_number'")
-    row = cursor.fetchone()
-    last_number = int(row["value"]) if row else 0
-    
-    if last_number < start_number:
-        last_number = start_number - 1
-    
-    new_number = last_number + 1
+    today = datetime.now().strftime("%Y%m%d")
     
     cursor.execute(
-        "UPDATE settings SET value = ? WHERE key = 'last_invoice_number'",
-        (str(new_number),)
+        "SELECT COUNT(*) as cnt FROM orders WHERE invoice_number LIKE %s",
+        (f"{prefix}-{today}%",)
     )
-    conn.commit()
+    result = cursor.fetchone()
+    count = result['cnt'] if result else 0
+    
     conn.close()
     
-    return f"{prefix}-{new_number:08d}"
+    number = start_number + count
+    return f"{prefix}-{today}-{number:03d}"
 
 
 def create_order(
@@ -92,9 +70,10 @@ def create_order(
     customer_name: str,
     customer_email: str,
     customer_phone: str,
-    invoice_prefix: str,
-    start_number: int
+    invoice_prefix: str = "СЧ",
+    start_number: int = 1
 ) -> int:
+    """Создание заказа"""
     conn = get_connection()
     cursor = conn.cursor()
     
@@ -104,7 +83,8 @@ def create_order(
         INSERT INTO orders (
             invoice_number, products, total_amount,
             customer_name, customer_email, customer_phone
-        ) VALUES (?, ?, ?, ?, ?, ?)
+        ) VALUES (%s, %s, %s, %s, %s, %s)
+        RETURNING id
     """, (
         invoice_number,
         json.dumps(products, ensure_ascii=False),
@@ -114,18 +94,20 @@ def create_order(
         customer_phone
     ))
     
-    order_id = cursor.lastrowid
+    order_id = cursor.fetchone()['id']
     conn.commit()
     conn.close()
     
+    print(f"Created order {order_id}: {invoice_number}")
     return order_id
 
 
 def get_order(order_id: int) -> Optional[dict]:
+    """Получение заказа по ID"""
     conn = get_connection()
     cursor = conn.cursor()
     
-    cursor.execute("SELECT * FROM orders WHERE id = ?", (order_id,))
+    cursor.execute("SELECT * FROM orders WHERE id = %s", (order_id,))
     row = cursor.fetchone()
     conn.close()
     
@@ -137,6 +119,7 @@ def get_order(order_id: int) -> Optional[dict]:
 
 
 def get_all_orders() -> list:
+    """Получение всех заказов"""
     conn = get_connection()
     cursor = conn.cursor()
     
@@ -153,51 +136,30 @@ def get_all_orders() -> list:
     return orders
 
 
-def update_order_company(
-    order_id: int,
-    company_name: str,
-    company_inn: str,
-    company_kpp: str,
-    company_address: str
-):
+def update_order(order_id: int, data: dict) -> bool:
+    """Обновление заказа"""
     conn = get_connection()
     cursor = conn.cursor()
     
-    cursor.execute("""
-        UPDATE orders SET
-            company_name = ?,
-            company_inn = ?,
-            company_kpp = ?,
-            company_address = ?,
-            status = 'filled'
-        WHERE id = ?
-    """, (company_name, company_inn, company_kpp, company_address, order_id))
+    fields = []
+    values = []
     
+    for key, value in data.items():
+        if key not in ['id', 'created_at', 'invoice_number']:
+            fields.append(f"{key} = %s")
+            if key == 'products':
+                values.append(json.dumps(value, ensure_ascii=False))
+            else:
+                values.append(value)
+    
+    if not fields:
+        return False
+    
+    values.append(order_id)
+    query = f"UPDATE orders SET {', '.join(fields)} WHERE id = %s"
+    
+    cursor.execute(query, values)
     conn.commit()
     conn.close()
-
-
-def mark_pdf_generated(order_id: int):
-    conn = get_connection()
-    cursor = conn.cursor()
     
-    cursor.execute("""
-        UPDATE orders SET pdf_generated = 1, status = 'invoice_created'
-        WHERE id = ?
-    """, (order_id,))
-    
-    conn.commit()
-    conn.close()
-
-
-def mark_sent_to_crm(order_id: int):
-    conn = get_connection()
-    cursor = conn.cursor()
-    
-    cursor.execute("""
-        UPDATE orders SET sent_to_crm = 1, status = 'sent_to_crm'
-        WHERE id = ?
-    """, (order_id,))
-    
-    conn.commit()
-    conn.close()
+    return True
