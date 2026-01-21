@@ -6,3 +6,8 @@ httpx==0.25.2
 weasyprint==60.1
 python-dateutil==2.8.2
 num2words==0.5.13
+pydyf==0.8.0
+pyphen==0.14.0
+cssselect2==0.7.0
+tinycss2==1.2.1
+Pillow==10.1.0
