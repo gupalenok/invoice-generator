@@ -98,7 +98,6 @@ def parse_tilda_order(data: dict) -> dict:
 async def tilda_webhook(request: Request):
     """Приём вебхука от Тильды"""
     try:
-        # Получаем данные
         content_type = request.headers.get("content-type", "")
         
         print("=" * 50)
@@ -110,46 +109,46 @@ async def tilda_webhook(request: Request):
         try:
             form_data = await request.form()
             data = dict(form_data)
-            print(f"Form data: {data}")
         except:
             pass
         
         if not data:
             try:
                 data = await request.json()
-                print(f"JSON data: {data}")
             except:
                 pass
         
         if not data:
-            body = await request.body()
-            print(f"Raw body: {body}")
+            print("No data received")
             return {"status": "error", "message": "No data received"}
         
-        print(f"Final data: {data}")
-        print("=" * 50)
+        print(f"Data: {data}")
         
         # Парсим заказ
         order_data = parse_tilda_order(data)
         print(f"Parsed order: {order_data}")
         
-        # Сохраняем
-        try:
-            order_id = create_order(order_data)
-            print(f"SUCCESS! Created order ID: {order_id}")
-        except Exception as save_error:
-            print(f"ERROR saving order: {save_error}")
-            import traceback
-            print(traceback.format_exc())
-            return {"status": "error", "message": str(save_error)}
+        # Сохраняем - передаём параметры правильно
+        order_id = create_order(
+            products=order_data["products"],
+            total_amount=order_data["total_amount"],
+            customer_name=order_data["customer_name"],
+            customer_email=order_data["customer_email"],
+            customer_phone=order_data["customer_phone"],
+            invoice_prefix="СЧ",
+            start_number=1
+        )
+        
+        print(f"SUCCESS! Created order ID: {order_id}")
+        print("=" * 50)
         
         return {"status": "ok", "order_id": order_id}
         
     except Exception as e:
         import traceback
-        error_text = traceback.format_exc()
-        print(f"WEBHOOK ERROR: {error_text}")
+        print(f"WEBHOOK ERROR: {traceback.format_exc()}")
         return {"status": "ok"}
+
 
 
 
