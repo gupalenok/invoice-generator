@@ -36,6 +36,59 @@ async def startup():
 
 # ============== ВЕБХУК ОТ ТИЛЬДЫ ==============
 
+def parse_tilda_order(data: dict) -> dict:
+    """Парсит данные заказа от Тильды (form-data формат)"""
+    
+    # Извлекаем товары из формата payment[products][0][name]
+    products = []
+    i = 0
+    while True:
+        name_key = f'payment[products][{i}][name]'
+        if name_key not in data:
+            break
+        
+        product = {
+            "name": data.get(f'payment[products][{i}][name]', ''),
+            "quantity": int(data.get(f'payment[products][{i}][quantity]', 1)),
+            "price": float(data.get(f'payment[products][{i}][price]', 0)),
+            "amount": float(data.get(f'payment[products][{i}][amount]', 0)),
+            "sku": data.get(f'payment[products][{i}][sku]', ''),
+            "period": "",  # Можно извлечь из названия если нужно
+        }
+        products.append(product)
+        i += 1
+    
+    # Если товары не найдены, создаём один товар из общей суммы
+    if not products:
+        total = float(data.get('payment[amount]', 0))
+        if total > 0:
+            products = [{
+                "name": "Заказ",
+                "quantity": 1,
+                "price": total,
+                "amount": total,
+                "sku": "",
+                "period": "",
+            }]
+    
+    # Общая сумма
+    total_amount = float(data.get('payment[amount]', 0))
+    if total_amount == 0:
+        total_amount = sum(p['amount'] for p in products)
+    
+    # Номер заказа
+    order_id = data.get('payment[orderid]', '')
+    
+    return {
+        "tilda_order_id": order_id,
+        "customer_name": data.get('Name', ''),
+        "customer_email": data.get('Email', ''),
+        "customer_phone": data.get('Phone', ''),
+        "products": products,
+        "total_amount": total_amount,
+    }
+
+
 @app.post("/webhook/tilda")
 async def tilda_webhook(request: Request):
     """Приём вебхука от Тильды"""
