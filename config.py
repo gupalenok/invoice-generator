@@ -1,8 +1,8 @@
 import os
 
 # DaData API
-DADATA_API_KEY = os.getenv("DADATA_API_KEY", "")
-DADATA_SECRET_KEY = os.getenv("DADATA_SECRET_KEY", "")
+DADATA_API_KEY = os.getenv("DADATA_API_KEY", "6331710129b8363a28b4e9697f9d8f6342a166a2")
+DADATA_SECRET_KEY = os.getenv("DADATA_SECRET_KEY", "69cc9c50ba5a37a3ec0522bafcf53ff826ccb956")
 
 # Реквизиты вашей компании (исполнитель)
 COMPANY = {
