@@ -1,8 +1,8 @@
 fastapi==0.104.1
-uvicorn[standard]==0.24.0
+uvicorn==0.24.0
 jinja2==3.1.2
 python-multipart==0.0.6
 httpx==0.25.2
 python-dateutil==2.8.2
 num2words==0.5.13
-fpdf2==2.7.6
+reportlab==4.0.7
