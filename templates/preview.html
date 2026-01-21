@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+
+{% block title %}Предпросмотр счёта {{ order.invoice_number }}{% endblock %}
+
+{% block content %}
+<div class="preview-container">
+    <h1>Счёт готов к скачиванию</h1>
+    
+    <div class="preview-info">
+        <p><strong>Номер счёта:</strong> {{ order.invoice_number }}</p>
+        <p><strong>Плательщик:</strong> {{ order.company_name }}</p>
+        <p><strong>ИНН:</strong> {{ order.company_inn }}</p>
+        <p><strong>Сумма:</strong> {{ "{:,.2f}".format(order.total_amount).replace(",", " ") }} ₽</p>
+    </div>
+    
+    <div class="preview-actions">
+        <a href="/order/{{ order.id }}/download" class="btn btn-primary">
+            📥 Скачать PDF
+        </a>
+        <a href="/order/{{ order.id }}" class="btn btn-secondary">
+            ← Изменить реквизиты
+        </a>
+    </div>
+</div>
+{% endblock %}
