@@ -34,7 +34,8 @@ async def startup():
     init_db()
 
 
-# ============== ВЕБХУК ОТ ТИЛЬДЫ ==============
+
+# Парсер
 
 def parse_tilda_order(data: dict) -> dict:
     """Парсит данные заказа от Тильды (form-data формат)"""
@@ -89,22 +90,24 @@ def parse_tilda_order(data: dict) -> dict:
     }
 
 
+
+
+# ============== ВЕБХУК ОТ ТИЛЬДЫ ==============
+
 @app.post("/webhook/tilda")
 async def tilda_webhook(request: Request):
     """Приём вебхука от Тильды"""
     try:
-        # Получаем данные в любом формате
+        # Получаем данные
         content_type = request.headers.get("content-type", "")
         
         print("=" * 50)
         print("WEBHOOK RECEIVED!")
         print(f"Content-Type: {content_type}")
         
-        # Пробуем разные форматы
+        # Получаем form-data
         data = {}
-        
         try:
-            # Сначала пробуем как form-data (так Тильда обычно шлёт)
             form_data = await request.form()
             data = dict(form_data)
             print(f"Form data: {data}")
@@ -113,14 +116,12 @@ async def tilda_webhook(request: Request):
         
         if not data:
             try:
-                # Пробуем как JSON
                 data = await request.json()
                 print(f"JSON data: {data}")
             except:
                 pass
         
         if not data:
-            # Читаем сырые данные
             body = await request.body()
             print(f"Raw body: {body}")
             return {"status": "error", "message": "No data received"}
@@ -133,8 +134,14 @@ async def tilda_webhook(request: Request):
         print(f"Parsed order: {order_data}")
         
         # Сохраняем
-        order_id = create_order(order_data)
-        print(f"Created order ID: {order_id}")
+        try:
+            order_id = create_order(order_data)
+            print(f"SUCCESS! Created order ID: {order_id}")
+        except Exception as save_error:
+            print(f"ERROR saving order: {save_error}")
+            import traceback
+            print(traceback.format_exc())
+            return {"status": "error", "message": str(save_error)}
         
         return {"status": "ok", "order_id": order_id}
         
@@ -142,9 +149,7 @@ async def tilda_webhook(request: Request):
         import traceback
         error_text = traceback.format_exc()
         print(f"WEBHOOK ERROR: {error_text}")
-        # Возвращаем ok чтобы Тильда не повторяла запрос
         return {"status": "ok"}
-
 
 
 
